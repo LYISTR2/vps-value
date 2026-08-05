@@ -207,6 +207,11 @@ export function html() {
           <div class="value ok" id="valueTo">--</div>
           <div class="hint" id="fxHint">实时汇率加载中...</div>
         </div>
+        <div class="kpi">
+          <div class="name">人民币价值</div>
+          <div class="value" id="valueCny">--</div>
+          <div class="hint" id="cnyHint">无论选什么币种，都换算成人民币</div>
+        </div>
       </div>
       <div class="kpi" style="margin-top:12px;">
         <div class="name">人民币 / 美元 比率（最近7天）</div>
@@ -335,13 +340,21 @@ export function html() {
       // 并行：汇率换算 + 走势图
       const chartTask = renderFxChart();
       try {
+        // 目标币种换算
         const rate = await getRate(from, to);
         const converted = valueFrom * rate;
         $('valueTo').textContent = converted.toFixed(2) + ' ' + to;
         $('fxHint').textContent = (from === to) ? '' : ('1 ' + from + ' = ' + rate.toFixed(6) + ' ' + to);
+
+        // 人民币换算（无论目标币种）
+        const cnyRate = from === 'CNY' ? 1 : await getRate(from, 'CNY');
+        $('valueCny').textContent = (valueFrom * cnyRate).toFixed(2) + ' CNY';
+        $('cnyHint').textContent = from === 'CNY' ? '原币种即人民币' : ('1 ' + from + ' = ' + cnyRate.toFixed(6) + ' CNY');
       } catch (e) {
         $('valueTo').textContent = '--';
         $('fxHint').textContent = '汇率失败：' + (e && e.message ? e.message : '未知错误');
+        $('valueCny').textContent = '--';
+        $('cnyHint').textContent = '人民币汇率获取失败';
       }
 
       $('meta').innerHTML =
