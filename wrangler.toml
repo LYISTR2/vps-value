@@ -1,4 +1,5 @@
-name = "vps-residual-value-calculator-worker"
+name = "vps-residual-value-calculator"
 main = "src/index.js"
-compatibility_date = "2026-02-08"
+compatibility_date = "2026-08-05"
+compatibility_flags = ["nodejs_compat"]
 workers_dev = true

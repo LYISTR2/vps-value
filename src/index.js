@@ -1,437 +1,85 @@
-const RATE_TTL_MS = 10 * 60 * 1000;
-let rateCache = { ts: 0, base: 'USD', rates: null };
-
-async function fetchRates(base = 'USD') {
-  const now = Date.now();
-  if (rateCache.rates && rateCache.base === base && now - rateCache.ts < RATE_TTL_MS) {
-    return rateCache.rates;
-  }
-
-  const url = `https://open.er-api.com/v6/latest/${encodeURIComponent(base)}`;
-  const res = await fetch(url, { cf: { cacheTtl: 300, cacheEverything: true } });
-  if (!res.ok) throw new Error(`汇率接口失败: ${res.status}`);
-  const data = await res.json();
-  if (!data?.rates) throw new Error('汇率数据异常');
-
-  rateCache = { ts: now, base, rates: data.rates };
-  return data.rates;
-}
+/**
+ * Cloudflare Worker 入口
+ * 路由: /api/rate, /api/rate-history, 其余返回页面
+ */
+import { html } from './html.js';
+import { fetchRates, getRateHistory, validCurrency } from './fx.js';
+import { calcResidualValue } from './calc.js';
 
 function json(data, status = 200) {
   return new Response(JSON.stringify(data), {
     status,
     headers: {
       'content-type': 'application/json; charset=utf-8',
-      'access-control-allow-origin': '*'
-    }
+      'cache-control': 'no-store',
+    },
   });
 }
 
-function html() {
-  return new Response(`<!doctype html>
-<html lang="zh-CN">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>VPS 剩余价值计算器</title>
-  <style>
-    :root {
-      --bg: #0b1020;
-      --panel: rgba(255,255,255,0.08);
-      --line: rgba(255,255,255,0.14);
-      --text: #e9eeff;
-      --muted: #a9b3d6;
-      --brand: #8b7bff;
-      --brand2: #43d1ff;
-      --ok: #27d79a;
-    }
-    * { box-sizing: border-box; }
-    body {
-      margin: 0;
-      min-height: 100vh;
-      font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Microsoft YaHei", sans-serif;
-      color: var(--text);
-      background:
-        radial-gradient(1000px 500px at 10% -10%, rgba(139,123,255,.35), transparent 60%),
-        radial-gradient(900px 500px at 100% 0%, rgba(67,209,255,.22), transparent 55%),
-        linear-gradient(160deg, #0b1020 0%, #111933 45%, #0a1228 100%);
-      display: grid;
-      place-items: center;
-      padding: 30px;
-    }
-    .wrap {
-      width: 100%;
-      max-width: 1200px;
-      display: grid;
-      grid-template-columns: 1.15fr .85fr;
-      gap: 22px;
-    }
-    .card {
-      background: linear-gradient(180deg, rgba(255,255,255,0.10), rgba(255,255,255,0.06));
-      border: 1px solid rgba(255,255,255,0.18);
-      border-radius: 22px;
-      backdrop-filter: blur(14px);
-      -webkit-backdrop-filter: blur(14px);
-      box-shadow: 0 24px 70px rgba(0,0,0,.38), inset 0 1px 0 rgba(255,255,255,.15);
-    }
-    .left { padding: 30px; }
-    .right { padding: 30px; }
-    h1 {
-      margin: 0 0 10px;
-      font-size: 34px;
-      letter-spacing: .2px;
-      background: linear-gradient(90deg, #d9e1ff, #9be5ff 60%, #cabfff);
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-    }
-    .sub { margin: 0 0 22px; color: var(--muted); font-size: 16px; }
-    .grid {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 12px;
-    }
-    .field { display: flex; flex-direction: column; gap: 6px; }
-    .field.full { grid-column: 1 / -1; }
-    label { color: var(--muted); font-size: 14px; }
-    input, select {
-      width: 100%;
-      border: 1px solid var(--line);
-      background: rgba(11,16,32,.5);
-      color: var(--text);
-      border-radius: 14px;
-      padding: 13px 14px;
-      font-size: 16px;
-      outline: none;
-    }
-    input:focus, select:focus { border-color: #7fdfff; box-shadow: 0 0 0 3px rgba(127,223,255,.18); }
-    .actions {
-      margin-top: 14px;
-      display: flex;
-      gap: 10px;
-      flex-wrap: wrap;
-    }
-    button {
-      border: none;
-      border-radius: 12px;
-      padding: 12px 18px;
-      color: #fff;
-      cursor: pointer;
-      font-weight: 700;
-      font-size: 15px;
-      background: linear-gradient(135deg, var(--brand), var(--brand2));
-      box-shadow: 0 8px 24px rgba(88,133,255,.35);
-    }
-    .ghost {
-      background: rgba(255,255,255,.08);
-      border: 1px solid var(--line);
-      box-shadow: none;
-    }
-    .kpis {
-      display: grid;
-      gap: 12px;
-    }
-    .kpi {
-      border: 1px solid rgba(255,255,255,0.16);
-      border-radius: 16px;
-      padding: 14px;
-      background: linear-gradient(180deg, rgba(11,16,32,.55), rgba(11,16,32,.35));
-    }
-    .kpi .name { color: var(--muted); font-size: 13px; }
-    .kpi .value { margin-top: 8px; font-size: 34px; font-weight: 800; }
-    .kpi .hint { margin-top: 6px; font-size: 13px; color: var(--muted); }
-    .ok { color: var(--ok); }
-    .meta {
-      margin-top: 10px;
-      font-size: 12px;
-      color: var(--muted);
-      line-height: 1.7;
-      border-top: 1px dashed var(--line);
-      padding-top: 10px;
-    }
-    @media (max-width: 860px) {
-      body { padding: 12px; }
-      .wrap { grid-template-columns: 1fr; gap: 12px; }
-      .left, .right { padding: 16px; }
-      h1 { font-size: 26px; }
-      .sub { font-size: 14px; margin-bottom: 14px; }
-      .grid { grid-template-columns: 1fr; gap: 10px; }
-      input, select { font-size: 16px; padding: 12px; }
-      .actions { display: grid; grid-template-columns: 1fr 1fr; }
-      button { width: 100%; padding: 12px; font-size: 14px; }
-      .kpi .value { font-size: 30px; }
-      .meta { font-size: 12px; }
-    }
-  </style>
-</head>
-<body>
-  <main class="wrap">
-    <section class="card left">
-      <h1>VPS 剩余价值计算器</h1>
-      <p class="sub">支持月付/年付，按剩余天数计算残值，并实时换算到目标货币。</p>
-      <div class="grid">
-        <div class="field">
-          <label>总价（原币种）</label>
-          <input id="price" type="number" min="0" step="0.01" value="0" />
-        </div>
-        <div class="field">
-          <label>计费周期</label>
-          <select id="cycle">
-            <option value="monthly" selected>月付（按当月天数）</option>
-            <option value="yearly">年付（按区间天数）</option>
-          </select>
-        </div>
-
-        <div class="field">
-          <label>开始日期</label>
-          <input id="startDate" type="date" />
-        </div>
-        <div class="field">
-          <label>到期日期</label>
-          <input id="endDate" type="date" />
-        </div>
-
-        <div class="field">
-          <label>原币种</label>
-          <select id="from">
-            <option selected>USD</option><option>EUR</option><option>HKD</option><option>CNY</option><option>JPY</option><option>SGD</option>
-          </select>
-        </div>
-        <div class="field">
-          <label>目标币种</label>
-          <select id="to">
-            <option selected>USD</option><option>CNY</option><option>HKD</option><option>EUR</option><option>JPY</option><option>SGD</option>
-          </select>
-        </div>
-
-        <div class="field full">
-          <label>备注（可选）</label>
-          <input id="note" type="text" placeholder="例如：RackNerd 2C2G，东京机房" />
-        </div>
-      </div>
-      <div class="actions">
-        <button id="calc">计算剩余价值</button>
-      </div>
-    </section>
-
-    <aside class="card right">
-      <div class="kpis">
-        <div class="kpi">
-          <div class="name">剩余天数</div>
-          <div class="value" id="daysLeft">--</div>
-          <div class="hint">按你填写的到期日自动计算</div>
-        </div>
-        <div class="kpi">
-          <div class="name">原币种剩余价值</div>
-          <div class="value" id="valueFrom">--</div>
-          <div class="hint" id="ratioHint">--</div>
-        </div>
-        <div class="kpi">
-          <div class="name">目标币种剩余价值</div>
-          <div class="value ok" id="valueTo">--</div>
-          <div class="hint" id="fxHint">实时汇率加载中...</div>
-        </div>
-      </div>
-      <div class="kpi" style="margin-top:12px;">
-        <div class="name">人民币 / 美元 比率（最近7天）</div>
-        <svg id="fxChart" viewBox="0 0 300 120" style="width:100%;height:auto;margin-top:8px;"></svg>
-        <div class="hint" id="fxChartHint">加载中...</div>
-      </div>
-      <div class="meta" id="meta"></div>
-    </aside>
-  </main>
-
-  <script>
-    const $ = (id) => document.getElementById(id);
-    let chartCache = { key: '', ts: 0, points: null, from: '', to: '' };
-
-    function getDaysDiff(a, b) {
-      const ms = new Date(b).setHours(0,0,0,0) - new Date(a).setHours(0,0,0,0);
-      return Math.max(0, Math.ceil(ms / 86400000));
-    }
-
-    function getDaysInMonth(dateStr) {
-      const d = new Date(dateStr);
-      const y = d.getFullYear();
-      const m = d.getMonth();
-      return new Date(y, m + 1, 0).getDate();
-    }
-
-    function escapeHtml(text) {
-      return String(text)
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;')
-        .replace(/'/g, '&#39;');
-    }
-
-    async function getRate(from, to) {
-      if (from === to) return 1;
-      const res = await fetch('/api/rate?from=' + encodeURIComponent(from) + '&to=' + encodeURIComponent(to));
-      const data = await res.json();
-      if (!res.ok || !data.ok) throw new Error(data.error || '汇率获取失败');
-      return data.rate;
-    }
-
-    function drawFxChart(points) {
-      const svg = $("fxChart");
-      const hint = $("fxChartHint");
-      const rates = points.map((p) => p.rate);
-      const min = Math.min.apply(null, rates);
-      const max = Math.max.apply(null, rates);
-      const pad = (max - min) * 0.2 || 0.01;
-      const ymin = min - pad;
-      const ymax = max + pad;
-      const w = 300, h = 120;
-      const x = (i) => (i / (points.length - 1)) * (w - 20) + 10;
-      const y = (v) => h - ((v - ymin) / (ymax - ymin)) * (h - 20) - 10;
-      const d = points.map((p, i) => (i === 0 ? 'M' : 'L') + x(i).toFixed(2) + ' ' + y(p.rate).toFixed(2)).join(' ');
-
-      svg.innerHTML =
-        '<defs><linearGradient id="g" x1="0" x2="1" y1="0" y2="0"><stop offset="0%" stop-color="#8b7bff"/><stop offset="100%" stop-color="#43d1ff"/></linearGradient></defs>' +
-        '<path d="' + d + '" fill="none" stroke="url(#g)" stroke-width="3" stroke-linecap="round"/>';
-
-      hint.textContent = '近7天: 最低 ' + min.toFixed(4) + ' · 最高 ' + max.toFixed(4) + '（1 USD -> CNY）';
-    }
-
-    async function renderFxChart() {
-      const svg = $("fxChart");
-      const hint = $("fxChartHint");
-      const key = 'USD->CNY:7';
-      const now = Date.now();
-      if (chartCache.key === key && chartCache.points && (now - chartCache.ts) < 5 * 60 * 1000) {
-        drawFxChart(chartCache.points);
-        return;
-      }
-
-      svg.innerHTML = '';
-      hint.textContent = '加载中...';
-      try {
-        const res = await fetch('/api/rate-history?from=USD&to=CNY&days=7');
-        const data = await res.json();
-        if (!res.ok || !data.ok || !data.points || data.points.length < 2) {
-          hint.textContent = '暂无走势图数据';
-          return;
-        }
-        const points = data.points;
-        chartCache = { key, ts: now, points, from: 'USD', to: 'CNY' };
-        drawFxChart(points);
-      } catch (e) {
-        hint.textContent = '走势图加载失败';
-      }
-    }
-
-    async function calculate() {
-      const price = Number($("price").value || 0);
-      const cycle = $("cycle").value;
-      const from = $("from").value;
-      const to = $("to").value;
-      const startDate = $("startDate").value;
-      const endDate = $("endDate").value;
-      const note = $("note").value.trim();
-
-      if (Number.isNaN(price) || price < 0 || !startDate || !endDate) {
-        alert('请先填写有效总价、开始日期、到期日期');
-        return;
-      }
-
-      const intervalDays = getDaysDiff(startDate, endDate);
-      const totalDays = intervalDays > 0
-        ? intervalDays
-        : (cycle === 'monthly' ? getDaysInMonth(startDate) : 365);
-      const today = new Date().toISOString().slice(0, 10);
-      const leftDays = getDaysDiff(today, endDate);
-      const remainRatio = totalDays > 0 ? (leftDays / totalDays) : 0;
-      const valueFrom = price * Math.max(0, remainRatio);
-
-      $("daysLeft").textContent = leftDays.toString();
-      $("valueFrom").textContent = valueFrom.toFixed(2) + ' ' + from;
-      $("ratioHint").textContent = '剩余比例 ' + (Math.max(0, remainRatio) * 100).toFixed(2) + '%（' + leftDays + '/' + totalDays + ' 天）';
-
-      const chartTask = renderFxChart();
-      try {
-        const rate = await getRate(from, to);
-        const converted = valueFrom * rate;
-        $("valueTo").textContent = converted.toFixed(2) + ' ' + to;
-        $("fxHint").textContent = (from === to) ? '' : ('1 ' + from + ' = ' + rate.toFixed(6) + ' ' + to);
-      } catch (e) {
-        $("valueTo").textContent = '--';
-        $("fxHint").textContent = '汇率失败：' + (e && e.message ? e.message : '未知错误');
-      }
-
-      $("meta").innerHTML =
-        '<div>周期：' + (cycle === 'yearly' ? '年付' : '月付') + '</div>' +
-        '<div>区间：' + startDate + ' ~ ' + endDate + '</div>' +
-        (note ? ('<div>备注：' + escapeHtml(note) + '</div>') : '');
-
-      await chartTask;
-    }
-
-    $("calc").addEventListener('click', calculate);
-    $("from").addEventListener('change', calculate);
-    $("to").addEventListener('change', calculate);
-
-    (function init() {
-      const now = new Date();
-      const start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-      const end = new Date(now.getFullYear(), now.getMonth() + 1, now.getDate());
-      const fmt = d => d.toISOString().slice(0,10);
-      $("price").value = 0;
-      $("cycle").value = 'monthly';
-      $("startDate").value = fmt(start);
-      $("endDate").value = fmt(end);
-      calculate();
-    })();
-  </script>
-</body>
-</html>`, {
-    headers: { 'content-type': 'text/html; charset=utf-8' }
-  });
+function badRequest(msg) {
+  return json({ ok: false, error: msg }, 400);
 }
 
 export default {
   async fetch(request) {
     const url = new URL(request.url);
 
-    if (url.pathname === '/api/rate') {
-      const from = (url.searchParams.get('from') || 'USD').toUpperCase();
-      const to = (url.searchParams.get('to') || 'CNY').toUpperCase();
+    // GET /api/rate?from=X&to=Y
+    if (url.pathname === '/api/rate' && request.method === 'GET') {
+      const from = validCurrency(url.searchParams.get('from')) || 'USD';
+      const to = validCurrency(url.searchParams.get('to')) || 'CNY';
       try {
         const rates = await fetchRates(from);
         const rate = rates[to];
-        if (!rate) return json({ ok: false, error: `不支持币种: ${to}` }, 400);
+        if (typeof rate !== 'number') return badRequest(`不支持币种: ${to}`);
         return json({ ok: true, from, to, rate });
       } catch (e) {
         return json({ ok: false, error: e.message || '汇率获取失败' }, 500);
       }
     }
 
-    if (url.pathname === '/api/rate-history') {
-      const from = (url.searchParams.get('from') || 'USD').toUpperCase();
-      const to = (url.searchParams.get('to') || 'CNY').toUpperCase();
+    // GET /api/rate-history?from=X&to=Y&days=N
+    if (url.pathname === '/api/rate-history' && request.method === 'GET') {
+      const from = validCurrency(url.searchParams.get('from')) || 'USD';
+      const to = validCurrency(url.searchParams.get('to')) || 'CNY';
       const days = Math.max(3, Math.min(30, Number(url.searchParams.get('days') || 7)));
       try {
-        const todayStr = new Date().toISOString().slice(0, 10);
-        const end = new Date(todayStr + 'T00:00:00Z');
-        const start = new Date(end.getTime() - (days - 1) * 86400000);
-        const fmt = (d) => d.toISOString().slice(0, 10);
-        const api = 'https://api.frankfurter.app/' + fmt(start) + '..' + fmt(end) + '?from=' + encodeURIComponent(from) + '&to=' + encodeURIComponent(to);
-        const res = await fetch(api, { cf: { cacheTtl: 3600, cacheEverything: true } });
-        if (!res.ok) throw new Error('历史汇率接口失败: ' + res.status);
-        const data = await res.json();
-        const rates = data && data.rates ? data.rates : {};
-        const points = Object.keys(rates)
-          .filter((date) => date <= todayStr)
-          .sort()
-          .map((date) => ({ date, rate: rates[date] && rates[date][to] }))
-          .filter((x) => typeof x.rate === 'number')
-          .slice(-days);
+        const points = await getRateHistory(from, to, days);
         return json({ ok: true, from, to, points });
       } catch (e) {
         return json({ ok: false, error: e.message || '历史汇率获取失败' }, 500);
       }
     }
 
-    return html();
-  }
+    // POST /api/calc — 服务端计算（供 API 调用）
+    if (url.pathname === '/api/calc' && request.method === 'POST') {
+      try {
+        const body = await request.json();
+        const { price, startDate, endDate, cycle } = body;
+        const c = validCurrency(body.from) || 'USD';
+        const t = validCurrency(body.to) || 'USD';
+
+        if (!(typeof price === 'number' && price >= 0)) return badRequest('price 必须是非负数字');
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(String(startDate || ''))) return badRequest('startDate 格式错误');
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(String(endDate || ''))) return badRequest('endDate 格式错误');
+
+        const result = calcResidualValue({ price, startDate, endDate, cycle });
+        let rate = 1;
+        if (c !== t) {
+          try {
+            const rates = await fetchRates(c);
+            rate = rates[t] ?? 1;
+          } catch { /* 汇率失败时按 1:1 */ }
+        }
+        return json({ ok: true, ...result, from: c, to: t, rate, converted: result.value * rate });
+      } catch (e) {
+        return json({ ok: false, error: e.message || '计算失败' }, 400);
+      }
+    }
+
+    // 其余返回页面
+    return new Response(html(), {
+      headers: { 'content-type': 'text/html; charset=utf-8' },
+    });
+  },
 };

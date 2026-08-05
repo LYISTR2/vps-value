@@ -1,57 +1,49 @@
 # VPS 剩余价值计算器（Cloudflare Workers）
 
-一个可直接部署到 **Cloudflare Workers** 的单文件应用：
-- 计算 VPS 套餐剩余价值（按剩余天数）
+一个可直接部署到 **Cloudflare Workers** 的应用：
+- 计算 VPS 套餐剩余价值（按剩余天数，含首尾天）
 - 支持月付 / 年付
 - 支持实时汇率换算（USD/CNY/HKD/EUR/JPY/SGD）
 - 支持近7天人民币/美元汇率走势图
 - 现代化深色玻璃拟态 UI（增强版，移动端适配）
+- 提供 REST API（`/api/rate`、`/api/rate-history`、`/api/calc`）
 
 ---
 
-## 设计思路（参考市面产品）
-调研了 AWS / GCP / Azure / DigitalOcean 等计算器后，提炼了这些通用设计点：
-
-1. **输入区 + 结果区分栏**（降低认知负担）
-2. **核心数字大字展示**（剩余天数、剩余价值）
-3. **汇率与细节信息分层显示**（主结果优先）
-4. **实时性提示**（当前汇率）
-
-本项目采用更偏「面板化 + 玻璃拟态」风格，适配桌面与移动端。
-
----
-
-## 功能说明
-
-### 1) 剩余价值计算
-
-核心公式：
+## 项目结构
 
 ```text
-剩余比例 = 剩余天数 / 套餐总天数
-剩余价值(原币种) = 总价 × 剩余比例
+.
+├── src/
+│   ├── index.js      # Worker 入口 + 路由
+│   ├── calc.js       # 日期/剩余价值计算（纯函数，可测试）
+│   ├── fx.js         # 汇率服务（缓存 + 降级）
+│   └── html.js       # 前端页面模板
+├── tests/
+│   └── calc.test.js  # 计算逻辑单元测试
+├── package.json
+├── wrangler.toml
+└── README.md
 ```
 
-其中：
-- 套餐总天数优先使用「开始日期 ~ 到期日期」真实天数
-- 当日期缺失时，可按月付30天/年付365天兜底
+---
 
-### 2) 实时汇率换算
+## 计算逻辑说明
 
-通过 Worker 后端接口 `/api/rate` 拉取实时汇率（上游：`open.er-api.com`），前端只请求本域接口。
+```text
+总天数 = 开始日期 ~ 到期日期（含首尾）
+剩余天数 = 今天 ~ 到期日期（含首尾，最小 0）
+剩余比例 = 剩余天数 / 总天数（0~1 截断）
+剩余价值 = 总价 × 剩余比例
+```
 
-- `GET /api/rate?from=USD&to=CNY`
-- 返回 `{ ok, from, to, rate }`
+修复与改进点：
 
-并在 Worker 端做了内存缓存（10分钟）以减少重复请求。
-
-### 3) 汇率走势图（7天）
-
-通过 Worker 后端接口 `/api/rate-history` 获取近14天数据（上游：`frankfurter.app`），前端 SVG 绘制曲线。
-
-- 页面固定展示 **USD->CNY**（人民币/美元）7天趋势（当日回溯7天，不包含未来日期）
-- `GET /api/rate-history?from=USD&to=CNY&days=7`
-- 返回 `{ ok, from, to, points: [{ date, rate }] }`
+1. **时区安全** — 日期解析统一用 `Date.UTC` / 本地时区字符串，避免 UTC 与本地时区混用导致的 ±1 天误差（原版在 UTC 环境部署时会出现）
+2. **含首尾天** — 天数计算改为含首尾（`8/1~8/31` = 31 天），更符合套餐计费直觉
+3. **比例截断** — 剩余比例钳制在 `[0, 1]`，避免未来套餐算出 >100% 的异常值
+4. **参数校验** — 服务端校验 `price >= 0`、日期格式 `YYYY-MM-DD`、到期日必须晚于开始日
+5. **币种白名单** — 非法币种直接拒绝，避免请求上游接口
 
 ---
 
@@ -62,21 +54,18 @@ npm install
 npm run dev
 ```
 
-打开 Wrangler 提示的本地地址即可。
+打开 Wrangler 提示的本地地址即可。测试：
+
+```bash
+npm test
+```
 
 ---
 
 ## 部署到 Cloudflare Workers
 
-### 1) 登录 Cloudflare
-
 ```bash
 npx wrangler login
-```
-
-### 2) 部署
-
-```bash
 npm run deploy
 ```
 
@@ -84,25 +73,35 @@ npm run deploy
 
 ---
 
-## 项目结构
+## REST API
 
-```text
-.
-├── src/
-│   └── index.js        # Worker + 页面 + API
-├── package.json
-├── wrangler.toml
-└── README.md
+### `GET /api/rate?from=USD&to=CNY`
+
+实时汇率，内存缓存 10 分钟。
+
+```json
+{ "ok": true, "from": "USD", "to": "CNY", "rate": 6.762932 }
 ```
 
----
+### `GET /api/rate-history?from=USD&to=CNY&days=7`
 
-## 可扩展建议
+近 N 天汇率走势（上限 30 天），缓存 1 小时。
 
-- 增加更多币种（按需扩展下拉列表）
-- 增加「折价率」参数（用于二手 VPS 转让折损）
-- 增加套餐模板（RackNerd/Vultr/DO/甲骨文等）
-- 增加历史汇率走势图（可接入图表库）
+```json
+{ "ok": true, "from": "USD", "to": "CNY", "points": [ { "date": "2026-08-04", "rate": 6.7535 } ] }
+```
+
+### `POST /api/calc`
+
+服务端剩余价值计算（含汇率换算）。
+
+```json
+// 请求
+{ "price": 100, "startDate": "2026-08-01", "endDate": "2026-08-31", "from": "USD", "to": "CNY" }
+
+// 响应
+{ "ok": true, "totalDays": 31, "leftDays": 27, "ratio": 0.8709, "value": 87.10, "from": "USD", "to": "CNY", "rate": 6.7629, "converted": 589.03 }
+```
 
 ---
 
