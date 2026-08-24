@@ -32,8 +32,8 @@ footer{border-top:1px solid var(--line);padding:11px 16px;color:var(--dim);font-
           <div class="field"><label for="cycle">付款周期</label><select id="cycle"><option value="monthly">月付</option><option value="yearly">年付</option><option value="custom">自定义</option></select></div>
           <div class="field"><label for="startDate">开始日期</label><input id="startDate" type="date" required></div>
           <div class="field"><label for="endDate">到期日期</label><input id="endDate" type="date" required></div>
-          <div class="field"><label for="from">原始币种</label><select id="from"><option value="USD">USD（美元）</option><option value="CNY">CNY（人民币）</option><option value="HKD">HKD（港币）</option><option value="EUR">EUR（欧元）</option><option value="JPY">JPY（日元）</option><option value="SGD">SGD（新加坡元）</option></select></div>
-          <div class="field"><label for="to">目标币种</label><select id="to"><option value="USD">USD（美元）</option><option value="CNY">CNY（人民币）</option><option value="HKD">HKD（港币）</option><option value="EUR">EUR（欧元）</option><option value="JPY">JPY（日元）</option><option value="SGD">SGD（新加坡元）</option></select></div>
+          <div class="field"><label for="from">原始币种</label><select id="from"><option value="USD">USD（美元）</option><option value="CNY">CNY（人民币）</option><option value="HKD">HKD（港币）</option><option value="EUR">EUR（欧元）</option><option value="JPY">JPY（日元）</option><option value="SGD">SGD（新加坡元）</option><option value="CAD">CAD（加拿大元）</option><option value="GBP">GBP（英镑）</option></select></div>
+          <div class="field"><label for="to">目标币种</label><select id="to"><option value="USD">USD（美元）</option><option value="CNY">CNY（人民币）</option><option value="HKD">HKD（港币）</option><option value="EUR">EUR（欧元）</option><option value="JPY">JPY（日元）</option><option value="SGD">SGD（新加坡元）</option><option value="CAD">CAD（加拿大元）</option><option value="GBP">GBP（英镑）</option></select></div>
           <div class="field full"><label for="note">备注（仅本地显示）</label><input id="note" maxlength="120" placeholder="例如：东京机房 / 2核2G / 月付"></div>
         </div>
         <button class="run" id="run" type="submit">[ 回车 ] 开始计算</button>
@@ -52,8 +52,8 @@ footer{border-top:1px solid var(--line);padding:11px 16px;color:var(--dim);font-
         <div class="line"><span class="key">当前汇率</span><span class="val" id="rate">--</span></div>
       </div>
       <div class="chart-box">
-        <div class="chart-top"><span>美元兑人民币近期走势</span><span id="range">--</span></div>
-        <svg class="chart" id="chart" viewBox="0 0 320 118" aria-label="美元兑人民币近期汇率趋势"></svg>
+        <div class="chart-top"><span id="chartTitle">原始币种兑目标币种近期走势</span><span id="range">--</span></div>
+        <svg class="chart" id="chart" viewBox="0 0 320 118" aria-label="原始币种兑目标币种近期汇率趋势"></svg>
         <div class="chart-note" id="chartNote">正在加载历史汇率...</div>
       </div>
       <div class="log cursor" id="log">等待输入</div>
@@ -70,11 +70,13 @@ function setStatus(text,error=false){$('status').textContent=text;$('status').cl
 function setLog(lines){$('log').textContent=lines.join('\\n')}
 function cycleName(value){return value==='monthly'?'月付':value==='yearly'?'年付':'自定义'}
 function rateSourceName(value){return value==='identity'?'相同币种':value==='open.er-api.com'?'实时汇率接口':value||'未知'}
+function currencyName(code){return {USD:'美元',CNY:'人民币',HKD:'港币',EUR:'欧元',JPY:'日元',SGD:'新加坡元',CAD:'加拿大元',GBP:'英镑'}[code]||code}
 async function health(){try{await api('/api/health');$('health').textContent='在线';$('health').className='badge online'}catch{$('health').textContent='离线';$('health').className='badge'}}
 function draw(points){const svg=$('chart');if(!points||points.length<2){svg.innerHTML='';$('chartNote').textContent='历史汇率数据不足';return}const rates=points.map(p=>p.rate),min=Math.min(...rates),max=Math.max(...rates),spread=max-min||.01,pad=spread*.18,w=320,h=118;const x=i=>12+i*(w-24)/(points.length-1),y=v=>h-12-(v-(min-pad))*(h-24)/(spread+pad*2);const grid=[.25,.5,.75].map(n=>'<line class="gridline" x1="8" y1="'+(h*n)+'" x2="312" y2="'+(h*n)+'"/>').join('');const d=points.map((p,i)=>(i?'L':'M')+x(i).toFixed(1)+' '+y(p.rate).toFixed(1)).join(' ');const dots=points.map((p,i)=>'<circle class="dot" cx="'+x(i).toFixed(1)+'" cy="'+y(p.rate).toFixed(1)+'" r="2.5"/>').join('');svg.innerHTML=grid+'<path class="path" d="'+d+'"/>'+dots;$('range').textContent=min.toFixed(4)+'..'+max.toFixed(4);$('chartNote').textContent=points[0].date+' 至 '+points[points.length-1].date+' / 共 '+points.length+' 个交易日'}
-async function loadChart(){try{const d=await api('/api/rate-history?from=USD&to=CNY&days=7');draw(d.points)}catch(e){$('chartNote').textContent='历史汇率加载失败：'+e.message}}
+let chartRequestId=0;
+async function loadChart(from=$('from').value,to=$('to').value){const requestId=++chartRequestId;$('chartTitle').textContent=currencyName(from)+'兑'+currencyName(to)+'近期走势';$('chart').setAttribute('aria-label',currencyName(from)+'兑'+currencyName(to)+'近期汇率趋势');$('range').textContent='--';$('chartNote').textContent='正在加载历史汇率...';try{const d=await api('/api/rate-history?from='+encodeURIComponent(from)+'&to='+encodeURIComponent(to)+'&days=7');if(requestId!==chartRequestId)return;draw(d.points)}catch(e){if(requestId!==chartRequestId)return;$('chart').innerHTML='';$('chartNote').textContent='历史汇率加载失败：'+e.message}}
 async function calculate(event){event&&event.preventDefault();const run=$('run');run.disabled=true;setStatus('正在计算，请稍候...');const body={price:Number($('price').value),startDate:$('startDate').value,endDate:$('endDate').value,cycle:$('cycle').value,from:$('from').value,to:$('to').value,asOf:localDate(new Date())};try{const [d,cny]=await Promise.all([api('/api/calc',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)}),body.from==='CNY'?Promise.resolve({rate:1}):api('/api/rate?from='+body.from+'&to=CNY')]);$('totalDays').textContent=d.totalDays;$('leftDays').textContent=d.leftDays;$('ratio').textContent=(d.ratio*100).toFixed(2)+'%';$('sourceValue').textContent=money(d.value,d.from);$('targetValue').textContent=money(d.converted,d.to);$('cnyValue').textContent=money(d.value*cny.rate,'CNY');$('rate').textContent=d.from===d.to?'相同币种，无需换算':('1 '+d.from+' = '+Number(d.rate).toFixed(6)+' '+d.to);setStatus('计算完成。');setLog(['$ 计算结果摘要','付款周期：'+cycleName(d.cycle),'计算日期：'+body.asOf,'服务区间：'+body.startDate+' 至 '+body.endDate,'备注：'+($('note').value.trim()||'无'),'汇率来源：'+rateSourceName(d.rateSource)])}catch(e){setStatus(e.message,true);setLog(['$ 计算失败','错误：'+e.message])}finally{run.disabled=false}}
-$('form').addEventListener('submit',calculate);$('from').addEventListener('change',calculate);$('to').addEventListener('change',calculate);
+$('form').addEventListener('submit',calculate);$('from').addEventListener('change',()=>{calculate();loadChart()});$('to').addEventListener('change',()=>{calculate();loadChart()});
 (()=>{const now=new Date(),end=new Date(now.getFullYear(),now.getMonth()+1,now.getDate());$('startDate').value=localDate(now);$('endDate').value=localDate(end);health();loadChart();calculate()})();
 </script>
 </body></html>`;

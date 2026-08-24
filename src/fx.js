@@ -7,7 +7,7 @@ const HISTORY_TTL_MS = 60 * 60 * 1000;
 
 // 支持的币种白名单
 export const SUPPORTED_CURRENCIES = new Set([
-  'USD', 'CNY', 'HKD', 'EUR', 'JPY', 'SGD',
+  'USD', 'CNY', 'HKD', 'EUR', 'JPY', 'SGD', 'CAD', 'GBP',
 ]);
 
 // 内存缓存（每次请求全局单例）

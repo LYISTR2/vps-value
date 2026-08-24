@@ -45,10 +45,24 @@ test('invalid history days is rejected', async () => {
 });
 
 test('same-currency history returns identity points without upstream failure', async () => {
-  const { status, body } = await read(await request('/api/rate-history?from=USD&to=USD&days=7'));
+  const { status, body } = await read(await request('/api/rate-history?from=GBP&to=GBP&days=7'));
   assert.equal(status, 200);
+  assert.equal(body.from, 'GBP');
+  assert.equal(body.to, 'GBP');
   assert.equal(body.points.length, 7);
   assert.ok(body.points.every((point) => point.rate === 1));
+});
+
+test('CAD and GBP are accepted currencies', async () => {
+  const cad = await read(await request('/api/rate?from=CAD&to=CAD'));
+  assert.equal(cad.status, 200);
+  assert.equal(cad.body.rate, 1);
+  assert.equal(cad.body.from, 'CAD');
+
+  const gbp = await read(await request('/api/rate?from=GBP&to=GBP'));
+  assert.equal(gbp.status, 200);
+  assert.equal(gbp.body.rate, 1);
+  assert.equal(gbp.body.from, 'GBP');
 });
 
 test('calc validates content type, JSON and real dates', async () => {
@@ -118,6 +132,10 @@ test('page routes and security headers', async () => {
   assert.match(page, /总服务天数/);
   assert.match(page, /开始计算/);
   assert.match(page, /USD（美元）/);
+  assert.match(page, /CAD（加拿大元）/);
+  assert.match(page, /GBP（英镑）/);
+  assert.match(page, /currencyName/);
+  assert.match(page, /rate-history\?from=/);
   assert.doesNotMatch(page, /CHECKING|CALCULATE|days\.total|value\.source|INPUT|OUTPUT/);
 
   const inlineScript = page.match(/<script>([\s\S]*?)<\/script>/)?.[1];
