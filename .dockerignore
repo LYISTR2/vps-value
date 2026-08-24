@@ -1,0 +1,9 @@
+.git
+.github
+node_modules
+npm-debug.log
+tests
+README.md
+deploy.sh
+wrangler.toml
+package-lock.json

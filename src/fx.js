@@ -62,6 +62,14 @@ export async function getRateHistory(from, to, days = 7) {
   const end = new Date(`${todayStr}T00:00:00Z`);
   const start = new Date(end.getTime() - (clamped - 1) * 86_400_000);
   const fmt = (d) => d.toISOString().slice(0, 10);
+  if (from === to) {
+    const points = Array.from({ length: clamped }, (_, index) => ({
+      date: fmt(new Date(start.getTime() + index * 86_400_000)),
+      rate: 1,
+    }));
+    historyCache = { key, ts: now, points };
+    return points;
+  }
   const url =
     `https://api.frankfurter.app/${fmt(start)}..${fmt(end)}` +
     `?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`;

@@ -1,109 +1,142 @@
-# VPS 剩余价值计算器（Cloudflare Workers）
+# VPS_VALUE — VPS 剩余价值计算器
 
-一个可直接部署到 **Cloudflare Workers** 的应用：
-- 计算 VPS 套餐剩余价值（按剩余天数，含首尾天）
-- 支持月付 / 年付
-- 支持实时汇率换算（USD/CNY/HKD/EUR/JPY/SGD）
-- 支持近7天人民币/美元汇率走势图
-- 现代化深色玻璃拟态 UI（增强版，移动端适配）
-- 提供 REST API（`/api/rate`、`/api/rate-history`、`/api/calc`）
+一个同时支持 **Cloudflare Workers** 与 **VPS Docker 自部署** 的剩余价值计算器。
 
----
+- 严格日期校验，按实际服务区间的自然日计算（含首尾）
+- 实时汇率换算：USD / CNY / HKD / EUR / JPY / SGD
+- USD/CNY 近期市场日趋势图
+- 黑白命令行风格响应式 UI
+- REST API 与健康检查
+- Docker 非 root、只读文件系统、无额外 Linux capability
 
-## 项目结构
-
-```text
-.
-├── src/
-│   ├── index.js      # Worker 入口 + 路由
-│   ├── calc.js       # 日期/剩余价值计算（纯函数，可测试）
-│   ├── fx.js         # 汇率服务（缓存 + 降级）
-│   └── html.js       # 前端页面模板
-├── tests/
-│   └── calc.test.js  # 计算逻辑单元测试
-├── package.json
-├── wrangler.toml
-└── README.md
-```
-
----
-
-## 计算逻辑说明
+## 计算口径
 
 ```text
-总天数 = 开始日期 ~ 到期日期（含首尾）
-剩余天数 = 今天 ~ 到期日期（含首尾，最小 0）
-剩余比例 = 剩余天数 / 总天数（0~1 截断）
+总天数   = 开始日期 ~ 到期日期（含首尾）
+剩余天数 = 今天 ~ 到期日期（含首尾，最小为 0）
+剩余比例 = clamp(剩余天数 / 总天数, 0, 1)
 剩余价值 = 总价 × 剩余比例
 ```
 
-修复与改进点：
+`monthly / yearly / custom` 是套餐周期标签，实际价值始终按用户填写的真实起止日期计算。
 
-1. **时区安全** — 日期解析统一用 `Date.UTC` / 本地时区字符串，避免 UTC 与本地时区混用导致的 ±1 天误差（原版在 UTC 环境部署时会出现）
-2. **含首尾天** — 天数计算改为含首尾（`8/1~8/31` = 31 天），更符合套餐计费直觉
-3. **比例截断** — 剩余比例钳制在 `[0, 1]`，避免未来套餐算出 >100% 的异常值
-4. **参数校验** — 服务端校验 `price >= 0`、日期格式 `YYYY-MM-DD`、到期日必须晚于开始日
-5. **币种白名单** — 非法币种直接拒绝，避免请求上游接口
+## VPS 一键部署
 
----
+适用于 Debian / Ubuntu，以及已安装 Docker Compose 的其他 Linux。
 
-## 本地运行
+```bash
+bash <(curl -fsSL https://raw.githubusercontent.com/LYISTR2/vps-value/main/deploy.sh)
+```
+
+默认端口为 `8088`，自定义端口：
+
+```bash
+PORT=9000 bash <(curl -fsSL https://raw.githubusercontent.com/LYISTR2/vps-value/main/deploy.sh)
+```
+
+管理命令：
+
+```bash
+# 更新到 GitHub main 最新版本
+bash <(curl -fsSL https://raw.githubusercontent.com/LYISTR2/vps-value/main/deploy.sh) update
+
+# 查看状态
+bash <(curl -fsSL https://raw.githubusercontent.com/LYISTR2/vps-value/main/deploy.sh) status
+
+# 查看日志
+bash <(curl -fsSL https://raw.githubusercontent.com/LYISTR2/vps-value/main/deploy.sh) logs
+
+# 卸载应用（不会卸载 Docker）
+bash <(curl -fsSL https://raw.githubusercontent.com/LYISTR2/vps-value/main/deploy.sh) uninstall
+```
+
+安装位置默认是 `/opt/vps-value`，可通过 `VPS_VALUE_DIR` 修改。
+
+## Docker Compose 手动部署
+
+```bash
+git clone https://github.com/LYISTR2/vps-value.git
+cd vps-value
+PORT=8088 docker compose up -d --build
+curl http://127.0.0.1:8088/api/health
+```
+
+## Cloudflare Workers 部署
 
 ```bash
 npm install
-npm run dev
-```
-
-打开 Wrangler 提示的本地地址即可。测试：
-
-```bash
-npm test
-```
-
----
-
-## 部署到 Cloudflare Workers
-
-```bash
 npx wrangler login
 npm run deploy
 ```
 
-部署成功后会得到一个 `*.workers.dev` 域名。
+## 本地开发
 
----
+```bash
+npm install
+npm test
+npm run dev
+```
 
-## REST API
+原生 Node 运行：
+
+```bash
+PORT=8080 npm start
+```
+
+## API
+
+### `GET /api/health`
+
+```json
+{ "ok": true, "service": "vps-value", "version": "2.1.0" }
+```
 
 ### `GET /api/rate?from=USD&to=CNY`
 
-实时汇率，内存缓存 10 分钟。
-
 ```json
-{ "ok": true, "from": "USD", "to": "CNY", "rate": 6.762932 }
+{ "ok": true, "from": "USD", "to": "CNY", "rate": 6.72, "source": "open.er-api.com" }
 ```
 
 ### `GET /api/rate-history?from=USD&to=CNY&days=7`
 
-近 N 天汇率走势（上限 30 天），缓存 1 小时。
-
-```json
-{ "ok": true, "from": "USD", "to": "CNY", "points": [ { "date": "2026-08-04", "rate": 6.7535 } ] }
-```
+`days` 必须为 3–30 的整数。外汇市场周末通常没有数据，因此点数可能少于自然日天数。
 
 ### `POST /api/calc`
 
-服务端剩余价值计算（含汇率换算）。
-
 ```json
-// 请求
-{ "price": 100, "startDate": "2026-08-01", "endDate": "2026-08-31", "from": "USD", "to": "CNY" }
-
-// 响应
-{ "ok": true, "totalDays": 31, "leftDays": 27, "ratio": 0.8709, "value": 87.10, "from": "USD", "to": "CNY", "rate": 6.7629, "converted": 589.03 }
+{
+  "price": 100,
+  "startDate": "2026-08-01",
+  "endDate": "2026-08-31",
+  "asOf": "2026-08-24",
+  "cycle": "monthly",
+  "from": "USD",
+  "to": "CNY"
+}
 ```
 
----
+`asOf` 可选，用于明确“今天”的日历日期。页面会传入浏览器本地日期，避免 Cloudflare Workers 的 UTC 日期与用户所在时区在午夜附近不一致。
+
+错误约定：
+
+- 参数错误：HTTP 400 JSON
+- 方法错误：HTTP 405 JSON + `Allow`
+- 未知 API：HTTP 404 JSON
+- 汇率上游失败：HTTP 502 JSON，不会静默使用 1:1
+
+## 项目结构
+
+```text
+src/index.js       Worker 入口和 API 路由
+src/calc.js        严格日期及价值计算
+src/fx.js          汇率服务和缓存
+src/html.js        黑白终端风格页面
+server.js          VPS 原生 Node HTTP 适配器
+Dockerfile         非 root 生产镜像
+docker-compose.yml VPS 部署编排
+deploy.sh          一键安装/更新/管理脚本
+tests/             计算和 API 单元测试
+```
 
 ## License
 

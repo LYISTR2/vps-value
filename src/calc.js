@@ -1,68 +1,82 @@
 /**
- * 日期计算工具 — 纯函数，无副作用
- *
- * 所有日期均以 YYYY-MM-DD 字符串输入/输出（UTC 午夜解析），
- * 避免本地时区干扰。
+ * 日期与剩余价值计算 — 纯函数，无副作用。
+ * 所有日期均使用严格 YYYY-MM-DD 格式和 UTC 午夜，避免时区/DST 偏差。
  */
 
 const DAY_MS = 86_400_000;
+const DATE_RE = /^(\d{4})-(\d{2})-(\d{2})$/;
 
-/**
- * 两个日期之差（天数），含首尾。
- * 用 UTC 午夜解析避免时区偏移。
- * 例：getDaysDiffInclusive('2026-08-01', '2026-08-31') → 31
- */
+export function parseDateStrict(value) {
+  const text = String(value || '');
+  const match = DATE_RE.exec(text);
+  if (!match) throw new TypeError(`日期格式错误: ${text || '(空)'}`);
+
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  if (month < 1 || month > 12) throw new RangeError(`无效月份: ${text}`);
+
+  const maxDay = daysInMonth(year, month);
+  if (day < 1 || day > maxDay) throw new RangeError(`无效日期: ${text}`);
+  return { year, month, day, utcMs: Date.UTC(year, month - 1, day) };
+}
+
+export function isValidDateString(value) {
+  try {
+    parseDateStrict(value);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** 两个日期之差（含首尾）。顺序颠倒返回 0。 */
 export function getDaysDiffInclusive(a, b) {
-  const ms = Date.UTC(
-    ...b.split('-').map(Number),
-    0, 0, 0, 0
-  ) - Date.UTC(
-    ...a.split('-').map(Number),
-    0, 0, 0, 0
-  );
+  const start = parseDateStrict(a);
+  const end = parseDateStrict(b);
+  const ms = end.utcMs - start.utcMs;
   if (ms < 0) return 0;
-  return Math.floor(ms / DAY_MS) + 1; // 含首尾 +1
+  return Math.floor(ms / DAY_MS) + 1;
 }
 
-/**
- * 今天（本地时区）的 YYYY-MM-DD 字符串
- * 使用 toLocaleDateString('en-CA') 获取本地日期
- */
-export function todayLocal() {
-  return new Date().toLocaleDateString('en-CA'); // en-CA → YYYY-MM-DD
+/** 当前运行环境日历日期，格式 YYYY-MM-DD。 */
+export function todayLocal(now = new Date()) {
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
 }
 
-/**
- * 计算剩余天数（含首尾，最小 0）
- * 到期当天返回 1（含当天），到期后返回 0
- */
-export function remainingDays(endDate) {
-  const today = todayLocal();
+/** 到期当天返回 1，到期后返回 0。 */
+export function remainingDays(endDate, today = todayLocal()) {
   return Math.max(0, getDaysDiffInclusive(today, endDate));
 }
 
-/**
- * 某月天数（28/29/30/31）
- */
 export function daysInMonth(year, month) {
-  return new Date(year, month, 0).getDate();
+  if (!Number.isInteger(year) || !Number.isInteger(month) || month < 1 || month > 12) return 0;
+  return new Date(Date.UTC(year, month, 0)).getUTCDate();
 }
 
 /**
- * 核心剩余价值计算
- *
- * @param {Object} opts
- * @param {number}  opts.price      总价
- * @param {string}  opts.startDate  YYYY-MM-DD
- * @param {string}  opts.endDate    YYYY-MM-DD
- * @param {'monthly'|'yearly'} opts.cycle 计费周期
- * @returns {{ totalDays: number, leftDays: number, ratio: number, value: number }}
+ * 核心剩余价值计算。
+ * cycle 仅作套餐标签；价值始终按用户填写的实际起止日期计算。
  */
-export function calcResidualValue({ price, startDate, endDate, cycle }) {
+export function calcResidualValue({ price, startDate, endDate, cycle = 'custom', today }) {
+  if (!(typeof price === 'number' && Number.isFinite(price) && price >= 0)) {
+    throw new TypeError('price 必须是非负有限数字');
+  }
+  if (!['monthly', 'yearly', 'custom'].includes(cycle)) {
+    throw new TypeError('cycle 必须是 monthly、yearly 或 custom');
+  }
+
+  const start = parseDateStrict(startDate);
+  const end = parseDateStrict(endDate);
+  if (end.utcMs <= start.utcMs) throw new RangeError('到期日期必须晚于开始日期');
+
   const totalDays = getDaysDiffInclusive(startDate, endDate);
-  const leftDays = remainingDays(endDate);
-  const ratio = totalDays > 0 ? Math.min(1, leftDays / totalDays) : 0;
+  const leftDays = remainingDays(endDate, today);
+  const ratio = totalDays > 0 ? Math.max(0, Math.min(1, leftDays / totalDays)) : 0;
   const value = price * ratio;
 
-  return { totalDays, leftDays, ratio, value };
+  return { totalDays, leftDays, ratio, value, cycle };
 }
