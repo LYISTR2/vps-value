@@ -25,7 +25,7 @@ footer{border-top:1px solid var(--line);padding:11px 16px;color:var(--dim);font-
       <div class="prompt"><b>root@vps-value</b>:~$ ./calculate --interactive</div>
       <h1>VPS_VALUE</h1>
       <p class="subtitle">按实际服务周期计算 VPS 剩余价值，并换算实时汇率。</p>
-      <div class="block-title">[ INPUT ]</div>
+      <div class="block-title">[ 输入 / INPUT ]</div>
       <form id="form">
         <div class="fields">
           <div class="field"><label for="price">price / 总价</label><input id="price" type="number" min="0" step="0.01" value="0" required></div>
@@ -41,7 +41,7 @@ footer{border-top:1px solid var(--line);padding:11px 16px;color:var(--dim);font-
       </form>
     </section>
     <section class="pane">
-      <div class="output-head"><span>[ OUTPUT ]</span><span class="badge" id="health">CHECKING</span></div>
+      <div class="output-head"><span>[ 输出 / OUTPUT ]</span><span class="badge" id="health">CHECKING</span></div>
       <div class="terminal">
         <div class="line"><span class="key">days.total</span><span class="val" id="totalDays">--</span></div>
         <div class="line"><span class="key">days.remaining</span><span class="val major" id="leftDays">--</span></div>

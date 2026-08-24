@@ -110,7 +110,10 @@ test('page routes and security headers', async () => {
   const home = await request('/');
   assert.equal(home.status, 200);
   assert.match(home.headers.get('content-security-policy'), /frame-ancestors 'none'/);
-  assert.match(await home.text(), /VPS_VALUE/);
+  const page = await home.text();
+  assert.match(page, /VPS_VALUE/);
+  assert.match(page, /\[ 输入 \/ INPUT \]/);
+  assert.match(page, /\[ 输出 \/ OUTPUT \]/);
 
   const missing = await request('/missing');
   assert.equal(missing.status, 404);
