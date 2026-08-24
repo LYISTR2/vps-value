@@ -111,9 +111,13 @@ test('page routes and security headers', async () => {
   assert.equal(home.status, 200);
   assert.match(home.headers.get('content-security-policy'), /frame-ancestors 'none'/);
   const page = await home.text();
-  assert.match(page, /VPS_VALUE/);
-  assert.match(page, /\[ 输入 \/ INPUT \]/);
-  assert.match(page, /\[ 输出 \/ OUTPUT \]/);
+  assert.match(page, /服务器剩余价值/);
+  assert.match(page, /\[ 输入 \]/);
+  assert.match(page, /\[ 输出 \]/);
+  assert.match(page, /总服务天数/);
+  assert.match(page, /开始计算/);
+  assert.match(page, /USD（美元）/);
+  assert.doesNotMatch(page, /CHECKING|CALCULATE|days\.total|value\.source|INPUT|OUTPUT/);
 
   const missing = await request('/missing');
   assert.equal(missing.status, 404);

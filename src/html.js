@@ -5,7 +5,7 @@ export function html() {
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="color-scheme" content="dark">
-<title>VPS_VALUE :: residual calculator</title>
+<title>服务器剩余价值计算器</title>
 <style>
 :root{--bg:#050505;--panel:#0b0b0b;--line:#303030;--text:#f5f5f5;--muted:#929292;--dim:#5c5c5c;--ok:#fff;--bad:#ff6b6b;--shadow:#000}
 *{box-sizing:border-box}html{background:var(--bg)}body{margin:0;min-height:100vh;color:var(--text);background:radial-gradient(circle at 50% -20%,#1b1b1b 0,transparent 40%),repeating-linear-gradient(0deg,rgba(255,255,255,.018) 0,rgba(255,255,255,.018) 1px,transparent 1px,transparent 4px),var(--bg);font:14px/1.55 ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Microsoft YaHei",monospace;padding:24px}
@@ -19,59 +19,61 @@ footer{border-top:1px solid var(--line);padding:11px 16px;color:var(--dim);font-
 </head>
 <body>
 <main class="shell">
-  <header class="titlebar"><span class="lights"><i></i><i></i><i></i></span><span class="hostname">root@vps-value: ~/calculator</span></header>
+  <header class="titlebar"><span class="lights"><i></i><i></i><i></i></span><span class="hostname">服务器剩余价值计算器</span></header>
   <div class="layout">
     <section class="pane">
-      <div class="prompt"><b>root@vps-value</b>:~$ ./calculate --interactive</div>
-      <h1>VPS_VALUE</h1>
-      <p class="subtitle">按实际服务周期计算 VPS 剩余价值，并换算实时汇率。</p>
-      <div class="block-title">[ 输入 / INPUT ]</div>
+      <div class="prompt"><b>价值计算终端</b>:~$ 启动交互计算</div>
+      <h1>服务器剩余价值</h1>
+      <p class="subtitle">按实际服务周期计算服务器剩余价值，并换算实时汇率。</p>
+      <div class="block-title">[ 输入 ]</div>
       <form id="form">
         <div class="fields">
-          <div class="field"><label for="price">price / 总价</label><input id="price" type="number" min="0" step="0.01" value="0" required></div>
-          <div class="field"><label for="cycle">cycle / 周期标签</label><select id="cycle"><option value="monthly">monthly / 月付</option><option value="yearly">yearly / 年付</option><option value="custom">custom / 自定义</option></select></div>
-          <div class="field"><label for="startDate">start_date</label><input id="startDate" type="date" required></div>
-          <div class="field"><label for="endDate">end_date</label><input id="endDate" type="date" required></div>
-          <div class="field"><label for="from">source_currency</label><select id="from"><option>USD</option><option>CNY</option><option>HKD</option><option>EUR</option><option>JPY</option><option>SGD</option></select></div>
-          <div class="field"><label for="to">target_currency</label><select id="to"><option>USD</option><option>CNY</option><option>HKD</option><option>EUR</option><option>JPY</option><option>SGD</option></select></div>
-          <div class="field full"><label for="note">note / 备注（仅本地显示）</label><input id="note" maxlength="120" placeholder="RackNerd / Tokyo / 2C2G"></div>
+          <div class="field"><label for="price">总价</label><input id="price" type="number" min="0" step="0.01" value="0" required></div>
+          <div class="field"><label for="cycle">付款周期</label><select id="cycle"><option value="monthly">月付</option><option value="yearly">年付</option><option value="custom">自定义</option></select></div>
+          <div class="field"><label for="startDate">开始日期</label><input id="startDate" type="date" required></div>
+          <div class="field"><label for="endDate">到期日期</label><input id="endDate" type="date" required></div>
+          <div class="field"><label for="from">原始币种</label><select id="from"><option value="USD">USD（美元）</option><option value="CNY">CNY（人民币）</option><option value="HKD">HKD（港币）</option><option value="EUR">EUR（欧元）</option><option value="JPY">JPY（日元）</option><option value="SGD">SGD（新加坡元）</option></select></div>
+          <div class="field"><label for="to">目标币种</label><select id="to"><option value="USD">USD（美元）</option><option value="CNY">CNY（人民币）</option><option value="HKD">HKD（港币）</option><option value="EUR">EUR（欧元）</option><option value="JPY">JPY（日元）</option><option value="SGD">SGD（新加坡元）</option></select></div>
+          <div class="field full"><label for="note">备注（仅本地显示）</label><input id="note" maxlength="120" placeholder="例如：东京机房 / 2核2G / 月付"></div>
         </div>
-        <button class="run" id="run" type="submit">[ ENTER ] CALCULATE</button>
+        <button class="run" id="run" type="submit">[ 回车 ] 开始计算</button>
         <div class="status" id="status" role="status" aria-live="polite"></div>
       </form>
     </section>
     <section class="pane">
-      <div class="output-head"><span>[ 输出 / OUTPUT ]</span><span class="badge" id="health">CHECKING</span></div>
+      <div class="output-head"><span>[ 输出 ]</span><span class="badge" id="health">检测中</span></div>
       <div class="terminal">
-        <div class="line"><span class="key">days.total</span><span class="val" id="totalDays">--</span></div>
-        <div class="line"><span class="key">days.remaining</span><span class="val major" id="leftDays">--</span></div>
-        <div class="line"><span class="key">ratio.remaining</span><span class="val" id="ratio">--</span></div>
-        <div class="line"><span class="key">value.source</span><span class="val major" id="sourceValue">--</span></div>
-        <div class="line"><span class="key">value.target</span><span class="val major" id="targetValue">--</span></div>
-        <div class="line"><span class="key">value.cny</span><span class="val" id="cnyValue">--</span></div>
-        <div class="line"><span class="key">fx.rate</span><span class="val" id="rate">--</span></div>
+        <div class="line"><span class="key">总服务天数</span><span class="val" id="totalDays">--</span></div>
+        <div class="line"><span class="key">剩余天数</span><span class="val major" id="leftDays">--</span></div>
+        <div class="line"><span class="key">剩余比例</span><span class="val" id="ratio">--</span></div>
+        <div class="line"><span class="key">原币种剩余价值</span><span class="val major" id="sourceValue">--</span></div>
+        <div class="line"><span class="key">目标币种剩余价值</span><span class="val major" id="targetValue">--</span></div>
+        <div class="line"><span class="key">人民币剩余价值</span><span class="val" id="cnyValue">--</span></div>
+        <div class="line"><span class="key">当前汇率</span><span class="val" id="rate">--</span></div>
       </div>
       <div class="chart-box">
-        <div class="chart-top"><span>USD/CNY :: recent market days</span><span id="range">--</span></div>
+        <div class="chart-top"><span>美元兑人民币近期走势</span><span id="range">--</span></div>
         <svg class="chart" id="chart" viewBox="0 0 320 118" aria-label="美元兑人民币近期汇率趋势"></svg>
-        <div class="chart-note" id="chartNote">loading exchange history...</div>
+        <div class="chart-note" id="chartNote">正在加载历史汇率...</div>
       </div>
-      <div class="log cursor" id="log">waiting for input</div>
+      <div class="log cursor" id="log">等待输入</div>
     </section>
   </div>
-  <footer><span>v2.1.0 // cloudflare-worker + self-hosted</span><span>calculation basis: inclusive calendar days</span></footer>
+  <footer><span>版本 2.1.0 / 支持云端与自部署</span><span>计算口径：自然日，首尾两天均计入</span></footer>
 </main>
 <script>
-const $=id=>document.getElementById(id);const currencies=['USD','CNY','HKD','EUR','JPY','SGD'];
+const $=id=>document.getElementById(id);
 function localDate(d){return [d.getFullYear(),String(d.getMonth()+1).padStart(2,'0'),String(d.getDate()).padStart(2,'0')].join('-')}
 function money(value,currency){try{return new Intl.NumberFormat('zh-CN',{minimumFractionDigits:2,maximumFractionDigits:2}).format(value)+' '+currency}catch{return Number(value).toFixed(2)+' '+currency}}
-async function api(path,options){const res=await fetch(path,options);let data;try{data=await res.json()}catch{throw new Error('invalid server response')}if(!res.ok||!data.ok)throw new Error(data.error||('HTTP '+res.status));return data}
+async function api(path,options){const res=await fetch(path,options);let data;try{data=await res.json()}catch{throw new Error('服务器返回的数据格式无效')}if(!res.ok||!data.ok)throw new Error(data.error||('请求失败，状态码 '+res.status));return data}
 function setStatus(text,error=false){$('status').textContent=text;$('status').className='status'+(error?' error':'')}
 function setLog(lines){$('log').textContent=lines.join('\n')}
-async function health(){try{await api('/api/health');$('health').textContent='ONLINE';$('health').className='badge online'}catch{$('health').textContent='OFFLINE';$('health').className='badge'}}
-function draw(points){const svg=$('chart');if(!points||points.length<2){svg.innerHTML='';$('chartNote').textContent='not enough market-day data';return}const rates=points.map(p=>p.rate),min=Math.min(...rates),max=Math.max(...rates),spread=max-min||.01,pad=spread*.18,w=320,h=118;const x=i=>12+i*(w-24)/(points.length-1),y=v=>h-12-(v-(min-pad))*(h-24)/(spread+pad*2);const grid=[.25,.5,.75].map(n=>'<line class="gridline" x1="8" y1="'+(h*n)+'" x2="312" y2="'+(h*n)+'"/>').join('');const d=points.map((p,i)=>(i?'L':'M')+x(i).toFixed(1)+' '+y(p.rate).toFixed(1)).join(' ');const dots=points.map((p,i)=>'<circle class="dot" cx="'+x(i).toFixed(1)+'" cy="'+y(p.rate).toFixed(1)+'" r="2.5"/>').join('');svg.innerHTML=grid+'<path class="path" d="'+d+'"/>'+dots;$('range').textContent=min.toFixed(4)+'..'+max.toFixed(4);$('chartNote').textContent=points[0].date+' -> '+points[points.length-1].date+' / '+points.length+' market days'}
-async function loadChart(){try{const d=await api('/api/rate-history?from=USD&to=CNY&days=7');draw(d.points)}catch(e){$('chartNote').textContent='history unavailable: '+e.message}}
-async function calculate(event){event&&event.preventDefault();const run=$('run');run.disabled=true;setStatus('executing calculation...');const body={price:Number($('price').value),startDate:$('startDate').value,endDate:$('endDate').value,cycle:$('cycle').value,from:$('from').value,to:$('to').value,asOf:localDate(new Date())};try{const [d,cny]=await Promise.all([api('/api/calc',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)}),body.from==='CNY'?Promise.resolve({rate:1}):api('/api/rate?from='+body.from+'&to=CNY')]);$('totalDays').textContent=d.totalDays;$('leftDays').textContent=d.leftDays;$('ratio').textContent=(d.ratio*100).toFixed(2)+'%';$('sourceValue').textContent=money(d.value,d.from);$('targetValue').textContent=money(d.converted,d.to);$('cnyValue').textContent=money(d.value*cny.rate,'CNY');$('rate').textContent=d.from===d.to?'identity':('1 '+d.from+' = '+Number(d.rate).toFixed(6)+' '+d.to);setStatus('done. server calculation accepted.');setLog(['$ result --format=summary','cycle='+d.cycle,'as_of='+body.asOf,'interval='+body.startDate+'..'+body.endDate,'note='+($('note').value.trim()||'(none)'),'rate_source='+d.rateSource])}catch(e){setStatus(e.message,true);setLog(['$ calculation failed','error='+e.message])}finally{run.disabled=false}}
+function cycleName(value){return value==='monthly'?'月付':value==='yearly'?'年付':'自定义'}
+function rateSourceName(value){return value==='identity'?'相同币种':value==='open.er-api.com'?'实时汇率接口':value||'未知'}
+async function health(){try{await api('/api/health');$('health').textContent='在线';$('health').className='badge online'}catch{$('health').textContent='离线';$('health').className='badge'}}
+function draw(points){const svg=$('chart');if(!points||points.length<2){svg.innerHTML='';$('chartNote').textContent='历史汇率数据不足';return}const rates=points.map(p=>p.rate),min=Math.min(...rates),max=Math.max(...rates),spread=max-min||.01,pad=spread*.18,w=320,h=118;const x=i=>12+i*(w-24)/(points.length-1),y=v=>h-12-(v-(min-pad))*(h-24)/(spread+pad*2);const grid=[.25,.5,.75].map(n=>'<line class="gridline" x1="8" y1="'+(h*n)+'" x2="312" y2="'+(h*n)+'"/>').join('');const d=points.map((p,i)=>(i?'L':'M')+x(i).toFixed(1)+' '+y(p.rate).toFixed(1)).join(' ');const dots=points.map((p,i)=>'<circle class="dot" cx="'+x(i).toFixed(1)+'" cy="'+y(p.rate).toFixed(1)+'" r="2.5"/>').join('');svg.innerHTML=grid+'<path class="path" d="'+d+'"/>'+dots;$('range').textContent=min.toFixed(4)+'..'+max.toFixed(4);$('chartNote').textContent=points[0].date+' 至 '+points[points.length-1].date+' / 共 '+points.length+' 个交易日'}
+async function loadChart(){try{const d=await api('/api/rate-history?from=USD&to=CNY&days=7');draw(d.points)}catch(e){$('chartNote').textContent='历史汇率加载失败：'+e.message}}
+async function calculate(event){event&&event.preventDefault();const run=$('run');run.disabled=true;setStatus('正在计算，请稍候...');const body={price:Number($('price').value),startDate:$('startDate').value,endDate:$('endDate').value,cycle:$('cycle').value,from:$('from').value,to:$('to').value,asOf:localDate(new Date())};try{const [d,cny]=await Promise.all([api('/api/calc',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)}),body.from==='CNY'?Promise.resolve({rate:1}):api('/api/rate?from='+body.from+'&to=CNY')]);$('totalDays').textContent=d.totalDays;$('leftDays').textContent=d.leftDays;$('ratio').textContent=(d.ratio*100).toFixed(2)+'%';$('sourceValue').textContent=money(d.value,d.from);$('targetValue').textContent=money(d.converted,d.to);$('cnyValue').textContent=money(d.value*cny.rate,'CNY');$('rate').textContent=d.from===d.to?'相同币种，无需换算':('1 '+d.from+' = '+Number(d.rate).toFixed(6)+' '+d.to);setStatus('计算完成。');setLog(['$ 计算结果摘要','付款周期：'+cycleName(d.cycle),'计算日期：'+body.asOf,'服务区间：'+body.startDate+' 至 '+body.endDate,'备注：'+($('note').value.trim()||'无'),'汇率来源：'+rateSourceName(d.rateSource)])}catch(e){setStatus(e.message,true);setLog(['$ 计算失败','错误：'+e.message])}finally{run.disabled=false}}
 $('form').addEventListener('submit',calculate);$('from').addEventListener('change',calculate);$('to').addEventListener('change',calculate);
 (()=>{const now=new Date(),end=new Date(now.getFullYear(),now.getMonth()+1,now.getDate());$('startDate').value=localDate(now);$('endDate').value=localDate(end);health();loadChart();calculate()})();
 </script>
