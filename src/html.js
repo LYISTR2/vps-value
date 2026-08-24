@@ -67,7 +67,7 @@ function localDate(d){return [d.getFullYear(),String(d.getMonth()+1).padStart(2,
 function money(value,currency){try{return new Intl.NumberFormat('zh-CN',{minimumFractionDigits:2,maximumFractionDigits:2}).format(value)+' '+currency}catch{return Number(value).toFixed(2)+' '+currency}}
 async function api(path,options){const res=await fetch(path,options);let data;try{data=await res.json()}catch{throw new Error('服务器返回的数据格式无效')}if(!res.ok||!data.ok)throw new Error(data.error||('请求失败，状态码 '+res.status));return data}
 function setStatus(text,error=false){$('status').textContent=text;$('status').className='status'+(error?' error':'')}
-function setLog(lines){$('log').textContent=lines.join('\n')}
+function setLog(lines){$('log').textContent=lines.join('\\n')}
 function cycleName(value){return value==='monthly'?'月付':value==='yearly'?'年付':'自定义'}
 function rateSourceName(value){return value==='identity'?'相同币种':value==='open.er-api.com'?'实时汇率接口':value||'未知'}
 async function health(){try{await api('/api/health');$('health').textContent='在线';$('health').className='badge online'}catch{$('health').textContent='离线';$('health').className='badge'}}

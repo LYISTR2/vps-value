@@ -1,5 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import vm from 'node:vm';
 import worker from '../src/index.js';
 
 function request(path, init) {
@@ -118,6 +119,10 @@ test('page routes and security headers', async () => {
   assert.match(page, /开始计算/);
   assert.match(page, /USD（美元）/);
   assert.doesNotMatch(page, /CHECKING|CALCULATE|days\.total|value\.source|INPUT|OUTPUT/);
+
+  const inlineScript = page.match(/<script>([\s\S]*?)<\/script>/)?.[1];
+  assert.ok(inlineScript, '页面必须包含内联脚本');
+  assert.doesNotThrow(() => new vm.Script(inlineScript), '最终 HTML 中的浏览器脚本必须语法有效');
 
   const missing = await request('/missing');
   assert.equal(missing.status, 404);
