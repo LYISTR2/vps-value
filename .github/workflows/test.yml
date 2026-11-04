@@ -14,6 +14,7 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      - run: npm audit --audit-level=high
       - run: npm test
       - name: Deployment regression tests (isolated fixtures)
         run: sudo "$(command -v node)" --test tests/deploy.test.js
