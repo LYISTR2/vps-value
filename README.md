@@ -71,6 +71,8 @@ npm run deploy
 
 ## 本地开发
 
+需要 Node.js 22 或更新版本；开发/部署依赖的高危安全通告通过 CI 的 `npm audit --audit-level=high` 检查。
+
 ```bash
 npm ci
 npm test
