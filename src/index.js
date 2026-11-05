@@ -1,6 +1,7 @@
 import { html } from './html.js';
-import { fetchRates, getRateHistory, validCurrency } from './fx.js';
-import { calcResidualValue, isValidDateString } from './calc.js';
+import { getRate, getRateHistory, validCurrency } from './fx.js';
+import { calcResidualValue, isValidDateString, todayLocal } from './calc.js';
+import { parseJsonBody, RequestError } from './http.js';
 
 const API_ROUTES = new Map([
   ['/api/rate', new Set(['GET'])],
@@ -40,18 +41,6 @@ function methodNotAllowed(pathname, allowed) {
   );
 }
 
-async function parseJsonBody(request) {
-  const contentType = request.headers.get('content-type') || '';
-  if (!contentType.toLowerCase().includes('application/json')) {
-    throw new TypeError('Content-Type 必须是 application/json');
-  }
-  try {
-    return await request.json();
-  } catch {
-    throw new TypeError('请求 JSON 格式错误');
-  }
-}
-
 async function handleApi(request, url) {
   const allowed = API_ROUTES.get(url.pathname);
   if (!allowed) return json({ ok: false, error: 'API Not Found' }, 404);
@@ -66,9 +55,7 @@ async function handleApi(request, url) {
       const from = readCurrency(url.searchParams.get('from'), 'USD', 'from');
       const to = readCurrency(url.searchParams.get('to'), 'CNY', 'to');
       if (from === to) return json({ ok: true, from, to, rate: 1, source: 'identity' });
-      const rates = await fetchRates(from);
-      const rate = rates[to];
-      if (typeof rate !== 'number') return badRequest(`不支持币种: ${to}`);
+      const rate = await getRate(from, to);
       return json({ ok: true, from, to, rate, source: 'open.er-api.com' });
     } catch (error) {
       if (error instanceof TypeError) return badRequest(error.message);
@@ -86,7 +73,7 @@ async function handleApi(request, url) {
         return badRequest('days 必须是 3 到 30 的整数');
       }
       const points = await getRateHistory(from, to, parsedDays);
-      return json({ ok: true, from, to, days: parsedDays, points, source: 'frankfurter.app' });
+      return json({ ok: true, from, to, days: parsedDays, points, source: from === to ? 'identity' : 'frankfurter.app' });
     } catch (error) {
       if (error instanceof TypeError) return badRequest(error.message);
       return json({ ok: false, error: error.message || '历史汇率获取失败' }, 502);
@@ -96,8 +83,8 @@ async function handleApi(request, url) {
   try {
     const body = await parseJsonBody(request);
     const { price, startDate, endDate } = body;
-    const cycle = body.cycle || 'custom';
-    const asOf = body.asOf == null || body.asOf === '' ? undefined : body.asOf;
+    const cycle = body.cycle ?? 'custom';
+    const asOf = body.asOf == null || body.asOf === '' ? todayLocal() : body.asOf;
     const from = readCurrency(body.from, 'USD', 'from');
     const to = readCurrency(body.to, 'USD', 'to');
 
@@ -112,11 +99,12 @@ async function handleApi(request, url) {
     let rate = 1;
     let rateSource = 'identity';
     if (from !== to) {
-      const rates = await fetchRates(from);
-      rate = rates[to];
-      if (typeof rate !== 'number') return badRequest(`不支持币种: ${to}`);
+      rate = await getRate(from, to);
       rateSource = 'open.er-api.com';
     }
+
+    const converted = result.value * rate;
+    if (!Number.isFinite(converted)) return badRequest('换算金额超出可计算范围');
 
     return json({
       ok: true,
@@ -125,10 +113,11 @@ async function handleApi(request, url) {
       to,
       rate,
       rateSource,
-      asOf: asOf || null,
-      converted: result.value * rate,
+      asOf,
+      converted,
     });
   } catch (error) {
+    if (error instanceof RequestError) return json({ ok: false, error: error.message }, error.status);
     if (error instanceof TypeError || error instanceof RangeError) return badRequest(error.message);
     return json({ ok: false, error: error.message || '计算或汇率获取失败' }, 502);
   }

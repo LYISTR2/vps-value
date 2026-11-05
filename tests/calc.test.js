@@ -76,6 +76,26 @@ test('calcResidualValue 过期、未来和非法输入', () => {
   assert.equal(future.value, 200);
   assert.throws(() => calcResidualValue({ price: -1, startDate: '2026-01-01', endDate: '2026-02-01' }), /price/);
   assert.throws(() => calcResidualValue({ price: 1, startDate: '2026-02-31', endDate: '2026-03-02' }), /无效日期/);
-  assert.throws(() => calcResidualValue({ price: 1, startDate: '2026-03-02', endDate: '2026-03-02' }), /必须晚于/);
+  assert.throws(() => calcResidualValue({ price: 1, startDate: '2026-03-02', endDate: '2026-03-01' }), /不能早于/);
   assert.throws(() => calcResidualValue({ price: 1, startDate: '2026-01-01', endDate: '2026-02-01', cycle: 'weekly' }), /cycle/);
+});
+
+test('日期只接受字符串且保留 0001–0099 年的真实年份', () => {
+  assert.equal(isValidDateString(['2026-08-01']), false);
+  assert.equal(isValidDateString({ toString: () => '2026-08-01' }), false);
+  assert.equal(isValidDateString('0000-01-01'), false);
+  assert.equal(new Date(parseDateStrict('0099-01-01').utcMs).toISOString(), '0099-01-01T00:00:00.000Z');
+  assert.equal(getDaysDiffInclusive('0099-12-31', '0100-01-01'), 2);
+  assert.equal(isValidDateString('0004-02-29'), true);
+  assert.equal(isValidDateString('0100-02-29'), false);
+});
+
+test('含首尾支持一天套餐；未开始的剩余天数不超过总天数', () => {
+  const oneDay = calcResidualValue({ price: 10, startDate: '2026-08-01', endDate: '2026-08-01', today: '2026-08-01' });
+  assert.equal(oneDay.totalDays, 1);
+  assert.equal(oneDay.leftDays, 1);
+  assert.equal(oneDay.value, 10);
+  const future = calcResidualValue({ price: 100, startDate: '2026-08-01', endDate: '2026-08-31', today: '2026-07-01' });
+  assert.equal(future.totalDays, 31);
+  assert.equal(future.leftDays, 31);
 });

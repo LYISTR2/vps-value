@@ -65,17 +65,72 @@ footer{border-top:1px solid var(--line);padding:11px 16px;color:var(--dim);font-
 const $=id=>document.getElementById(id);
 function localDate(d){return [d.getFullYear(),String(d.getMonth()+1).padStart(2,'0'),String(d.getDate()).padStart(2,'0')].join('-')}
 function money(value,currency){try{return new Intl.NumberFormat('zh-CN',{minimumFractionDigits:2,maximumFractionDigits:2}).format(value)+' '+currency}catch{return Number(value).toFixed(2)+' '+currency}}
-async function api(path,options){const res=await fetch(path,options);let data;try{data=await res.json()}catch{throw new Error('服务器返回的数据格式无效')}if(!res.ok||!data.ok)throw new Error(data.error||('请求失败，状态码 '+res.status));return data}
+async function api(path,options={}){
+  const controller=new AbortController(),signal=options.signal;
+  const abort=()=>controller.abort();
+  if(signal?.aborted)abort();else signal?.addEventListener('abort',abort,{once:true});
+  const timer=setTimeout(abort,12000);
+  try{
+    const res=await fetch(path,{...options,signal:controller.signal});
+    let data;try{data=await res.json()}catch{throw new Error('服务器返回的数据格式无效')}
+    if(!res.ok||!data.ok)throw new Error(data.error||('请求失败，状态码 '+res.status));
+    return data;
+  }catch(e){if(controller.signal.aborted)throw new Error('请求已取消或超时，请重试');throw e}
+  finally{clearTimeout(timer);signal?.removeEventListener('abort',abort)}
+}
 function setStatus(text,error=false){$('status').textContent=text;$('status').className='status'+(error?' error':'')}
 function setLog(lines){$('log').textContent=lines.join('\\n')}
 function cycleName(value){return value==='monthly'?'月付':value==='yearly'?'年付':'自定义'}
 function rateSourceName(value){return value==='identity'?'相同币种':value==='open.er-api.com'?'实时汇率接口':value||'未知'}
 function currencyName(code){return {USD:'美元',CNY:'人民币',HKD:'港币',EUR:'欧元',JPY:'日元',SGD:'新加坡元',CAD:'加拿大元',GBP:'英镑'}[code]||code}
 async function health(){try{await api('/api/health');$('health').textContent='在线';$('health').className='badge online'}catch{$('health').textContent='离线';$('health').className='badge'}}
-function draw(points){const svg=$('chart');if(!points||points.length<2){svg.innerHTML='';$('chartNote').textContent='历史汇率数据不足';return}const rates=points.map(p=>p.rate),min=Math.min(...rates),max=Math.max(...rates),spread=max-min||.01,pad=spread*.18,w=320,h=118;const x=i=>12+i*(w-24)/(points.length-1),y=v=>h-12-(v-(min-pad))*(h-24)/(spread+pad*2);const grid=[.25,.5,.75].map(n=>'<line class="gridline" x1="8" y1="'+(h*n)+'" x2="312" y2="'+(h*n)+'"/>').join('');const d=points.map((p,i)=>(i?'L':'M')+x(i).toFixed(1)+' '+y(p.rate).toFixed(1)).join(' ');const dots=points.map((p,i)=>'<circle class="dot" cx="'+x(i).toFixed(1)+'" cy="'+y(p.rate).toFixed(1)+'" r="2.5"/>').join('');svg.innerHTML=grid+'<path class="path" d="'+d+'"/>'+dots;$('range').textContent=min.toFixed(4)+'..'+max.toFixed(4);$('chartNote').textContent=points[0].date+' 至 '+points[points.length-1].date+' / 共 '+points.length+' 个交易日'}
+function draw(points){const svg=$('chart');if(!points||points.length<2){svg.innerHTML='';$('chartNote').textContent='历史汇率数据不足';return}const rates=points.map(p=>p.rate),min=Math.min(...rates),max=Math.max(...rates),spread=max-min||.01,pad=spread*.18,w=320,h=118;const x=i=>12+i*(w-24)/(points.length-1),y=v=>max===min?h/2:h-12-(v-(min-pad))*(h-24)/(spread+pad*2);const grid=[.25,.5,.75].map(n=>'<line class="gridline" x1="8" y1="'+(h*n)+'" x2="312" y2="'+(h*n)+'"/>').join('');const d=points.map((p,i)=>(i?'L':'M')+x(i).toFixed(1)+' '+y(p.rate).toFixed(1)).join(' ');const dots=points.map((p,i)=>'<circle class="dot" cx="'+x(i).toFixed(1)+'" cy="'+y(p.rate).toFixed(1)+'" r="2.5"/>').join('');svg.innerHTML=grid+'<path class="path" d="'+d+'"/>'+dots;$('range').textContent=min.toFixed(4)+'..'+max.toFixed(4);$('chartNote').textContent=points[0].date+' 至 '+points[points.length-1].date+' / 共 '+points.length+' 个交易日'}
 let chartRequestId=0;
-async function loadChart(from=$('from').value,to=$('to').value){const requestId=++chartRequestId;$('chartTitle').textContent=currencyName(from)+'兑'+currencyName(to)+'近期走势';$('chart').setAttribute('aria-label',currencyName(from)+'兑'+currencyName(to)+'近期汇率趋势');$('range').textContent='--';$('chartNote').textContent='正在加载历史汇率...';try{const d=await api('/api/rate-history?from='+encodeURIComponent(from)+'&to='+encodeURIComponent(to)+'&days=7');if(requestId!==chartRequestId)return;draw(d.points)}catch(e){if(requestId!==chartRequestId)return;$('chart').innerHTML='';$('chartNote').textContent='历史汇率加载失败：'+e.message}}
-async function calculate(event){event&&event.preventDefault();const run=$('run');run.disabled=true;setStatus('正在计算，请稍候...');const body={price:Number($('price').value),startDate:$('startDate').value,endDate:$('endDate').value,cycle:$('cycle').value,from:$('from').value,to:$('to').value,asOf:localDate(new Date())};try{const [d,cny]=await Promise.all([api('/api/calc',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)}),body.from==='CNY'?Promise.resolve({rate:1}):api('/api/rate?from='+body.from+'&to=CNY')]);$('totalDays').textContent=d.totalDays;$('leftDays').textContent=d.leftDays;$('ratio').textContent=(d.ratio*100).toFixed(2)+'%';$('sourceValue').textContent=money(d.value,d.from);$('targetValue').textContent=money(d.converted,d.to);$('cnyValue').textContent=money(d.value*cny.rate,'CNY');$('rate').textContent=d.from===d.to?'相同币种，无需换算':('1 '+d.from+' = '+Number(d.rate).toFixed(6)+' '+d.to);setStatus('计算完成。');setLog(['$ 计算结果摘要','付款周期：'+cycleName(d.cycle),'计算日期：'+body.asOf,'服务区间：'+body.startDate+' 至 '+body.endDate,'备注：'+($('note').value.trim()||'无'),'汇率来源：'+rateSourceName(d.rateSource)])}catch(e){setStatus(e.message,true);setLog(['$ 计算失败','错误：'+e.message])}finally{run.disabled=false}}
+async function loadChart(from=$('from').value,to=$('to').value){const requestId=++chartRequestId;$('chartTitle').textContent=currencyName(from)+'兑'+currencyName(to)+'近期走势';$('chart').setAttribute('aria-label',currencyName(from)+'兑'+currencyName(to)+'近期汇率趋势');$('range').textContent='--';$('chart').innerHTML='';$('chartNote').textContent='正在加载历史汇率...';try{const d=await api('/api/rate-history?from='+encodeURIComponent(from)+'&to='+encodeURIComponent(to)+'&days=7');if(requestId!==chartRequestId)return;draw(d.points)}catch(e){if(requestId!==chartRequestId)return;$('chart').innerHTML='';$('chartNote').textContent='历史汇率加载失败：'+e.message}}
+let calculationId=0,calculationController;
+const outputIds=['totalDays','leftDays','ratio','sourceValue','targetValue','cnyValue','rate'];
+function clearOutput(){outputIds.forEach(id=>$(id).textContent='--')}
+function invalidateCalculation(){
+  ++calculationId;calculationController?.abort();clearOutput();
+  $('run').disabled=false;setStatus('输入已修改，请重新计算。');setLog(['等待重新计算']);
+}
+async function calculate(event){
+  event?.preventDefault();
+  const requestId=++calculationId;
+  calculationController?.abort();calculationController=new AbortController();
+  const signal=calculationController.signal,run=$('run');
+  run.disabled=true;clearOutput();setStatus('正在计算，请稍候...');
+  const body={price:Number($('price').value),startDate:$('startDate').value,endDate:$('endDate').value,cycle:$('cycle').value,from:$('from').value,to:$('to').value,asOf:localDate(new Date())};
+  const note=$('note').value.trim();
+  try{
+    const d=await api('/api/calc',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body),signal});
+    if(requestId!==calculationId)return;
+    $('totalDays').textContent=d.totalDays;$('leftDays').textContent=d.leftDays;
+    $('ratio').textContent=(d.ratio*100).toFixed(2)+'%';
+    $('sourceValue').textContent=money(d.value,d.from);$('targetValue').textContent=money(d.converted,d.to);
+    $('rate').textContent=d.from===d.to?'相同币种，无需换算':('1 '+d.from+' = '+Number(d.rate).toFixed(6)+' '+d.to);
+    setStatus('计算完成。');
+    setLog(['$ 计算结果摘要','付款周期：'+cycleName(d.cycle),'计算日期：'+d.asOf,'服务区间：'+body.startDate+' 至 '+body.endDate,'备注：'+(note||'无'),'汇率来源：'+rateSourceName(d.rateSource)]);
+    // The optional CNY reference must not discard a successful main calculation.
+    try{
+      let cnyValue;
+      if(d.from==='CNY')cnyValue=d.value;
+      else if(d.to==='CNY')cnyValue=d.converted;
+      else if(d.value===0)cnyValue=0;
+      else cnyValue=d.value*(await api('/api/rate?from='+encodeURIComponent(d.from)+'&to=CNY',{signal})).rate;
+      if(requestId!==calculationId)return;
+      if(!Number.isFinite(cnyValue))throw new Error('换算金额超出范围');
+      $('cnyValue').textContent=money(cnyValue,'CNY');
+    }catch(e){
+      if(requestId!==calculationId)return;
+      $('cnyValue').textContent='暂不可用';setStatus('计算完成；人民币参考值暂不可用。');
+    }
+  }catch(e){
+    if(requestId!==calculationId)return;
+    clearOutput();setStatus(e.message,true);setLog(['$ 计算失败','错误：'+e.message]);
+  }finally{if(requestId===calculationId)run.disabled=false}
+}
+$('form').addEventListener('input',invalidateCalculation);
 $('form').addEventListener('submit',calculate);$('from').addEventListener('change',()=>{calculate();loadChart()});$('to').addEventListener('change',()=>{calculate();loadChart()});
 (()=>{const now=new Date(),end=new Date(now.getFullYear(),now.getMonth()+1,now.getDate());$('startDate').value=localDate(now);$('endDate').value=localDate(end);health();loadChart();calculate()})();
 </script>

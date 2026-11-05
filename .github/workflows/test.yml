@@ -13,8 +13,12 @@ jobs:
         with:
           node-version: 22
           cache: npm
-      - run: npm install
+      - run: npm ci
+      - run: npm audit --audit-level=high
       - run: npm test
+      - name: Deployment regression tests (isolated fixtures)
+        run: sudo "$(command -v node)" --test tests/deploy.test.js
+      - run: bash -n deploy.sh
       - run: docker compose config -q
       - run: docker build -t vps-value:test .
       - name: Container smoke

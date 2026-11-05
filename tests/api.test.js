@@ -146,3 +146,50 @@ test('page routes and security headers', async () => {
   assert.equal(missing.status, 404);
   assert.equal(await missing.text(), 'Not Found');
 });
+
+const calcBody = { price: 100, startDate: '2026-08-01', endDate: '2026-08-31', asOf: '2026-08-24' };
+function calcRequest(body, headers = {}) {
+  return request('/api/calc', { method: 'POST', headers: { 'content-type': 'application/json', ...headers }, body: JSON.stringify(body) });
+}
+
+test('calc rejects non-object JSON and coerced date/currency/cycle inputs', async () => {
+  for (const body of [null, [], 'text', 10, true, { ...calcBody, startDate: ['2026-08-01'] }, { ...calcBody, from: ['USD'] }, { ...calcBody, cycle: false }]) {
+    const response = await calcRequest(body);
+    assert.equal(response.status, 400, JSON.stringify(body));
+  }
+  assert.equal((await calcRequest(calcBody, { 'content-type': 'application/json-invalid' })).status, 400);
+});
+
+test('Worker enforces body size with and without a declared length', async () => {
+  const payload = JSON.stringify({ ...calcBody, padding: 'x'.repeat(16384) });
+  for (const headers of [{}, { 'content-length': String(payload.length) }]) {
+    const response = await request('/api/calc', { method: 'POST', headers: { 'content-type': 'application/json', ...headers }, body: payload });
+    assert.equal(response.status, 413);
+    assert.equal((await response.json()).ok, false);
+  }
+  const payloadBytes = new TextEncoder().encode(payload);
+  const response = await request('/api/calc', {
+    method: 'POST', headers: { 'content-type': 'application/json' }, duplex: 'half',
+    body: new ReadableStream({ start(controller) { controller.enqueue(payloadBytes.slice(0, 8000)); controller.enqueue(payloadBytes.slice(8000)); controller.close(); } }),
+  });
+  assert.equal(response.status, 413);
+});
+
+test('calc resolves its default asOf date and identity history reports its actual source', async () => {
+  const { asOf, ...body } = calcBody;
+  const response = await calcRequest(body);
+  assert.match((await response.json()).asOf, /^\d{4}-\d{2}-\d{2}$/);
+  const history = await request('/api/rate-history?from=USD&to=USD');
+  assert.equal((await history.json()).source, 'identity');
+});
+
+test('upstream network errors are 502 and conversion overflow is rejected', async (t) => {
+  const fetchMock = t.mock.method(globalThis, 'fetch', async () => { throw new TypeError('fetch failed'); });
+  let response = await request('/api/rate?from=EUR&to=CNY');
+  assert.equal(response.status, 502);
+  assert.doesNotMatch((await response.json()).error, /fetch failed/);
+  fetchMock.mock.mockImplementation(async () => Response.json({ result: 'success', base_code: 'EUR', rates: { EUR: 1, CNY: 7.8 } }));
+  response = await calcRequest({ ...calcBody, price: Number.MAX_VALUE, asOf: '2026-08-01', from: 'EUR', to: 'CNY' });
+  assert.equal(response.status, 400);
+  assert.match((await response.json()).error, /超出/);
+});
